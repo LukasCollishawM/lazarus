@@ -22,10 +22,8 @@ dev = [
 ]
 
 [tool.setuptools]
-package-dir = {"" = "src"}
-
-[tool.setuptools.packages.find]
-where = ["src"]
+package-dir = {"lazarus" = "src"}
+packages = ["lazarus"]
 
 [tool.black]
 line-length = 100
