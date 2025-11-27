@@ -1,0 +1,24 @@
+{
+  "analysis": {
+    "functionAddresses": [
+      "0x004E2770",
+      "0x0051C9F0",
+      "0x0052C360",
+      "0x00535780",
+      "0x006BD230"
+    ],
+    "keywords": [
+      "contracts",
+      "plantera",
+      "leaderboard",
+      "search"
+    ],
+    "scripts": [
+      "network_patterns_json.py",
+      "struct_hints_json.py",
+      "payload_hints_json.py",
+      "request_response_json.py"
+    ]
+  }
+}
+

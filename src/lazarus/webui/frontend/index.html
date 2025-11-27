@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lazarus Web UI</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        background: #0f0f10;
+        color: #f5f5f5;
+      }
+      input,
+      button {
+        padding: 0.4rem;
+        margin: 0.2rem 0;
+      }
+      .job {
+        border: 1px solid #333;
+        padding: 0.5rem;
+        margin: 0.5rem 0;
+      }
+      .filters {
+        margin: 0.5rem 0 1rem;
+      }
+      .badge {
+        display: inline-block;
+        padding: 0.1rem 0.4rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        margin-left: 0.3rem;
+      }
+      .status-running {
+        background: #fbbf24;
+        color: #0f0f10;
+      }
+      .status-completed {
+        background: #4ade80;
+        color: #0f0f10;
+      }
+      .status-failed {
+        background: #ef4444;
+        color: #0f0f10;
+      }
+      footer {
+        margin-top: 2rem;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Lazarus Web UI</h1>
+    <form id="job-form">
+      <label>Binary path (full path to game .exe)<br />
+        <input name="binary" required placeholder="C:\Program Files (x86)\Steam\steamapps\common\Hitman Absolution\HMA.exe" value="C:\Program Files (x86)\Steam\steamapps\common\Hitman Absolution\HMA.exe" style="width: 100%; max-width: 600px;" />
+      </label><br />
+      <label>Ghidra installation directory (optional - auto-detected if blank)<br />
+        <input name="ghidra" placeholder="C:\Users\lukas\Downloads\ghidra_11.4_PUBLIC_20250620\ghidra_11.4_PUBLIC" value="C:\Users\lukas\Downloads\ghidra_11.4_PUBLIC_20250620\ghidra_11.4_PUBLIC" style="width: 100%; max-width: 600px;" />
+        <small style="color: #888; display: block; margin-top: 0.2rem;">
+          Leave blank to auto-detect, or specify the full path to the Ghidra version folder (e.g., <code>ghidra_11.4_PUBLIC</code>). 
+          This is the folder that contains <code>support/analyzeHeadless.bat</code>. Works from any location (Downloads, Program Files, etc.).
+        </small>
+      </label><br />
+      <label>Output directory<br />
+        <input name="output" value="lazarus-output" style="width: 100%; max-width: 600px;" />
+      </label><br />
+      <label>Game config (optional - leave blank for auto-detection)<br />
+        <input name="gameConfig" placeholder="Leave blank to analyze any game automatically" style="width: 100%; max-width: 600px;" />
+        <small style="color: #888; display: block; margin-top: 0.2rem;">Only specify if you have a game-specific preset (e.g., <code>lazarus/config/hitman.json</code>). Otherwise, Lazarus will use default analysis settings that work for any game.</small>
+      </label><br />
+      <label><input type="checkbox" name="generateBackend" checked /> Generate backend</label><br />
+      <label><input type="checkbox" name="generateMod" checked /> Generate mod</label><br />
+      <button type="submit">Start Job</button>
+    </form>
+
+    <h2>
+      Jobs
+      <button id="refresh-jobs" type="button">Refresh now</button>
+    </h2>
+    <div class="filters">
+      <label>Status filter
+        <select id="status-filter">
+          <option value="all">All</option>
+          <option value="queued">Queued</option>
+          <option value="running">Running</option>
+          <option value="completed">Completed</option>
+          <option value="failed">Failed</option>
+        </select>
+      </label>
+    </div>
+    <div id="jobs"></div>
+
+    <section id="logs-section" style="display: none">
+      <h3>
+        Logs
+        <span id="logs-job"></span>
+        <button id="refresh-logs" type="button">Refresh logs</button>
+      </h3>
+      <pre id="logs-output"></pre>
+      <h3>Events</h3>
+      <pre id="events-output"></pre>
+    </section>
+
+    <section>
+      <h2>Recent History</h2>
+      <div id="history"></div>
+    </section>
+
+    <footer>
+      Maintained by
+      <a href="https://github.com/lukascollishawm" target="_blank">lukascollishawm</a>.
+    </footer>
+
+    <script>
+      const jobsDiv = document.getElementById("jobs");
+      const form = document.getElementById("job-form");
+      const refreshJobsBtn = document.getElementById("refresh-jobs");
+      const logsSection = document.getElementById("logs-section");
+      const logsJob = document.getElementById("logs-job");
+      const logsOutput = document.getElementById("logs-output");
+      const refreshLogsBtn = document.getElementById("refresh-logs");
+      const eventsOutput = document.getElementById("events-output");
+      const historyDiv = document.getElementById("history");
+      let selectedJobId = null;
+      let logStream = null;
+      let eventStream = null;
+      const statusFilter = document.getElementById("status-filter");
+
+      async function refreshJobs() {
+        const res = await fetch("/jobs");
+        const jobs = await res.json();
+        const filtered = jobs.filter(
+          (job) => statusFilter.value === "all" || job.status === statusFilter.value
+        );
+        jobsDiv.innerHTML = "";
+        filtered.forEach((job) => {
+          const div = document.createElement("div");
+          div.className = "job";
+          const artifacts = [];
+          if (job.result?.rawJson) {
+            artifacts.push(
+              `<a href="/jobs/${job.id}/artifacts/raw" target="_blank">Raw</a>`
+            );
+          }
+          if (job.result?.cleanReport) {
+            artifacts.push(
+              `<a href="/jobs/${job.id}/artifacts/report" target="_blank">Report</a>`
+            );
+          }
+          if (job.result?.payloadSchema) {
+            artifacts.push(
+              `<a href="/jobs/${job.id}/artifacts/payload" target="_blank">Payload schema</a>`
+            );
+          }
+          if (job.result?.backendDir) {
+            artifacts.push(
+              `<a href="/jobs/${job.id}/artifacts/backend" target="_blank">Backend ZIP</a>`
+            );
+          }
+          if (job.result?.modDir) {
+            artifacts.push(
+              `<a href="/jobs/${job.id}/artifacts/mod" target="_blank">Mod ZIP</a>`
+            );
+          }
+          const payloadFields = job.result?.payloadFields || [];
+          const payloadPreview = payloadFields.length
+            ? `<div><strong>Payload schema preview</strong><ul>${payloadFields
+                .slice(0, 5)
+                .map(
+                  (field) =>
+                    `<li><code>${field.name}</code> : ${field.typeHint || "string"} (score ${
+                      field.score ?? 0
+                    })</li>`
+                )
+                .join("")}</ul></div>`
+            : "";
+          const schemaVersions = job.schemaVersions
+            ? `<div><strong>Schema versions:</strong> ${Object.entries(job.schemaVersions)
+                .map(([key, val]) => `${key}: v${val}`)
+                .join(", ")}</div>`
+            : "";
+          const functionLinks = job.result?.functionLinks || [];
+          const linksPreview = functionLinks.length
+            ? `<details><summary>Route candidates (${functionLinks.length})</summary><ul>${functionLinks
+                .slice(0, 5)
+                .map(
+                  (link) =>
+                    `<li><code>${link.httpVerbs.join("/") || "?"}</code> ${link.endpoints.join(", ") ||
+                      "/"} (confidence ${link.confidence})</li>`
+                )
+                .join("")}</ul></details>`
+            : "";
+          const bundleLink = job.result?.bundleDir
+            ? `<div><a href="${job.result.bundleDir}" target="_blank">Bundle directory</a></div>`
+            : "";
+          const badgeClass = `status-${job.status}`;
+          div.innerHTML = `
+            <strong>${job.id}</strong>
+            <span class="badge ${badgeClass}">${job.status}</span><br/>
+            Updated: ${new Date(job.updatedAt * 1000).toLocaleTimeString()}<br/>
+            Phase: ${job.phase || 'n/a'}
+            <div style="height:4px;background:#1f2937;margin:0.3rem 0;">
+              <div style="height:4px;background:#4ade80;width:${phasePercent(job.phase)}%;"></div>
+            </div>
+            Result: ${
+              job.result
+                ? `<code>${JSON.stringify(job.result)}</code>`
+                : "n/a"
+            }<br/>
+            ${payloadPreview}
+            ${linksPreview}
+            ${schemaVersions}
+            ${bundleLink}
+            Artifacts: ${artifacts.join(" | ") || "n/a"}<br/>
+            <button data-job="${job.id}" class="log-button">View logs</button>
+          `;
+          jobsDiv.appendChild(div);
+        });
+        document.querySelectorAll(".log-button").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            selectedJobId = btn.dataset.job;
+            logsJob.textContent = `(${selectedJobId})`;
+            logsSection.style.display = "block";
+            logsOutput.textContent = "";
+            eventsOutput.textContent = "";
+            refreshLogs();
+            startLogStream(selectedJobId);
+            startEventStream(selectedJobId);
+          });
+        });
+      }
+
+      async function refreshLogs() {
+        if (!selectedJobId) return;
+        const res = await fetch(`/jobs/${selectedJobId}/logs`);
+        if (!res.ok) return;
+        const logs = await res.json();
+        logsOutput.textContent = logs
+          .map((entry) => {
+            const ts = new Date(entry.timestamp * 1000).toLocaleTimeString();
+            return `[${ts}] [${entry.level}] ${entry.message}`;
+          })
+          .join("\n");
+      }
+
+      function startLogStream(jobId) {
+        if (logStream) {
+          logStream.close();
+        }
+        logStream = new EventSource(`/jobs/${jobId}/logs/stream`);
+        logStream.onmessage = (event) => {
+          try {
+            const entry = JSON.parse(event.data);
+            const ts = new Date(entry.timestamp * 1000).toLocaleTimeString();
+            logsOutput.textContent += `\n[${ts}] [${entry.level}] ${entry.message}`;
+            logsOutput.scrollTop = logsOutput.scrollHeight;
+          } catch (err) {
+            console.error(err);
+          }
+        };
+        logStream.onerror = () => {
+          logStream?.close();
+          logStream = null;
+        };
+      }
+
+      function startEventStream(jobId) {
+        if (eventStream) {
+          eventStream.close();
+        }
+        eventStream = new EventSource(`/jobs/${jobId}/events/stream`);
+        eventStream.onmessage = (event) => {
+          try {
+            const entry = JSON.parse(event.data);
+            const ts = new Date(entry.timestamp * 1000).toLocaleTimeString();
+            eventsOutput.textContent += `\n[${ts}] phase=${entry.phase} status=${entry.status}`;
+            eventsOutput.scrollTop = eventsOutput.scrollHeight;
+          } catch (err) {
+            console.error(err);
+          }
+        };
+        eventStream.onerror = () => {
+          eventStream?.close();
+          eventStream = null;
+        };
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const data = Object.fromEntries(new FormData(form));
+        data.generateBackend = !!form.generateBackend.checked;
+        data.generateMod = !!form.generateMod.checked;
+        await fetch("/jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+        form.reset();
+        refreshJobs();
+      });
+      refreshJobsBtn.addEventListener("click", refreshJobs);
+      statusFilter.addEventListener("change", refreshJobs);
+      refreshLogsBtn.addEventListener("click", refreshLogs);
+      window.addEventListener("beforeunload", () => logStream?.close());
+      window.addEventListener("beforeunload", () => eventStream?.close());
+
+      function phasePercent(phase) {
+        switch (phase) {
+          case 'analysis':
+            return 30;
+          case 'backend':
+            return 65;
+          case 'mod':
+            return 85;
+          case 'completed':
+            return 100;
+          default:
+            return 15;
+        }
+      }
+
+      async function refreshHistory() {
+        const res = await fetch("/jobs/history");
+        if (!res.ok) {
+          return;
+        }
+        const list = await res.json();
+        historyDiv.innerHTML = list
+          .slice(-10)
+          .map(
+            (item) =>
+              `<div>${new Date(item.updatedAt * 1000).toLocaleTimeString()} — ${item.status} — ${item.id}</div>`
+          )
+          .join("");
+      }
+
+      setInterval(() => {
+        refreshJobs();
+        refreshHistory();
+      }, 3000);
+      refreshJobs();
+      refreshHistory();
+    </script>
+  </body>
+</html>
+

@@ -1,0 +1,36 @@
+[project]
+name = "lazarus"
+version = "0.1.0"
+description = "Meta-tool for resurrecting discontinued game servers (Hitman Contracts foundation)."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6.0",
+    "typer>=0.12.0",
+    "rich>=13.7.0",
+    "requests>=2.32.3",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "ed25519>=1.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=24.8.0",
+    "ruff>=0.6.0",
+    "pytest>=8.3.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
