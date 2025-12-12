@@ -54,7 +54,7 @@ A generic, safe-by-default **Node.js/Fastify** server.
 A **C++ DLL** designed to be injected into the game process.
 -   **MinHook Integration**: It uses the patterns found in Phase 1 to hook the game's network functions at runtime.
 -   **Payload Bridge**: A `GamePayloadContext` struct maps the game's raw memory to the sanitized Canonical ABI structs.
--   **Sanitization Layer**: When the game tries to send data, the shim intercepts it, validates it against the schema, serializes it to safe JSON, and sends it to your new backend—bypassing the game's potentially buggy legacy network stack.
+-   **Sanitization Layer**: When the game tries to send data, the shim intercepts it, validates it against the schema, serializes it to safe JSON, and sends it to your new backend, bypassing the game's potentially buggy legacy network stack.
 -   **Instrumentation**: Includes a packet logger (`json_sink.cpp`) to dump traffic for further analysis or replay.
 
 ### Phase 4: Runtime Injection
